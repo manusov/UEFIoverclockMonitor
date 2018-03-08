@@ -1,6 +1,6 @@
 ;-----------------------------------------------------------------------------;
 ;                   Overclocking monitor information utility                  ;
-;                    (C) IC Book Labs. v0.1 from 07.03.2018                   ;
+;                              (C) IC Book Labs.                              ;
 ;-----------------------------------------------------------------------------;
 
 ; Notes.
@@ -21,22 +21,41 @@ mov [r15+00],rcx                  ; Store UEFI application handle
 mov [r15+08],rdx                  ; Store UEFI system table address
 cld
 
+;--- Detect CPUID support, this check can be actual at virtual machines ---
+mov ebx,21                ; Bit number for toggleable check
+pushf                     ; In the 64-bit mode, push RFLAGS
+pop rax
+bts eax,ebx               ; Set EAX.21=1
+push rax
+popf                      ; Load RFLAGS with RFLAGS.21=1
+pushf                     ; Store RFLAGS
+pop rax                   ; Load RFLAGS to RAX
+btr eax,ebx               ; Check EAX.21=1, Set EAX.21=0
+jnc ApplicationError1     ; Go error branch if cannot set EFLAGS.21=1
+push rax
+popf                      ; Load RFLAGS with RFLAGS.21=0
+pushf                     ; Store RFLAGS
+pop rax                   ; Load RFLAGS to RAX
+btr eax,ebx               ; Check EAX.21=0
+jc ApplicationError1      ; Go if cannot set EFLAGS.21=0
+
 ;--- Detect Hardware Coordination Feedback Capability (HCFC) feature ---
-xor eax,eax                       ; Select CPUID function 0
-cpuid
+xor eax,eax               ; Select CPUID function 0
+cpuid                   
 cmp eax,6
-jb ApplicationError1              ; Go error if CPUID function 6 not supported
-mov eax,6                         ; Select CPUID function 6
+jb ApplicationError1      ; Go error if CPUID function 6 not supported
+mov eax,6                 ; Select CPUID function 6
 cpuid
 test cl,0001b
-jz ApplicationError1              ; Go error if HCFC not detected 
+jz ApplicationError1      ; Go error if HCFC not detected 
 
 ;--- Measure clocks, check for measurement errors ---
 ; Return periods [femtoseconds]: R8=TSC , R9=IA32_MPERF , R10 = IA32_APERF
 call ClocksMeasure
-jc ApplicationError2              ; Go error if measurement failed
+jc ApplicationError2      ; Go error if measurement failed
 
 ;--- Built ASCII strings for TSC, IA32_MPERF, IA32_APERF ---
+; Note. Don't use LEA REG,[LABEL] in the UEFI, because PE64 relocation bug
 mov rdi,AsciiBuffer  ; RDI = Pointer to destination buffer for built ASCII text
 push rdi
 mov rsi,StringFrequencies
@@ -79,14 +98,14 @@ call StringWrite
 ;--- Exit point if no errors ---
 ExitProgram:
 mov rsi,NameMsg
-call StringWrite                  ; Write copyright string
+call StringWrite     ; Write copyright string
 jmp ApplicationExit
 
 ;--- Exit point if error --- 
-ApplicationError1:                ; Message if HCFC not available 
+ApplicationError1:   ; Message if HCFC not available 
 mov rsi,ErrorMsg1
 jmp ErrorWrite
-ApplicationError2:                ; Message if measurement error 
+ApplicationError2:   ; Message if measurement error 
 mov rsi,ErrorMsg2
 ErrorWrite:
 call StringWrite
@@ -95,7 +114,7 @@ call StringWrite
 ApplicationExit:
 pop r15 r14 r13 r12 r11 r10 r9 r8
 pop rbp rdi rsi rdx rcx rbx
-xor rax,rax                       ; RAX=EFI_STATUS=0
+xor rax,rax                       ; RAX = EFI_STATUS = 0
 ret                               ; Simple form of termination
 
 ;--- Subroutine for print ASCII string ---
@@ -167,32 +186,35 @@ pop rdx rcx rbx rax
 ret
 
 ;--- Bullt information string for CPU clock ---
-; Input:   RAX = Period, femtoseconds
+; Input:   RAX = Frequency, Hz
 ;          RDI = Pointer for built system information text strings
 ;          Use flat 64-bit addressing
 ; Output:  RDI = Modified if string built, otherwise preserved
+;          RAX corrupted
 ;---
 ClockPrint:
 push rbx rdx 
-imul rbx,rax,1000         ; RBX=Psec/clk
-test rbx,rbx
-jz @f                     ; Go if divide by zero
-mov rax,1000000000000000	; Femtoseconds per Second
-cqo                       ; D[127-64] = 0
-div rbx                   ; RAX=Frequency, KHz
-cqo
-mov ebx,1000
-div rbx                   ; EAX=Frequency, MHz
-mov	bl,0                  ; BL=Template mode
-call DecimalPrint32       ; Integer part
+mov rbx,1000000           ; Divisor for result unit = 1 MHz
+xor edx,edx               ; RDX = 0, means dividend[127-64] = 0
+div rbx                   ; RAX = Clock frequency in units = 1 MHz
+cmp rax,100000            ; Validity limit = 100 GHz
+jae .Error                ; Go if invalid frequency
+mov bl,0                  ; BL = Template mode, 0 means no template
+call DecimalPrint32       ; Print integer part X at X.Y MHz
 mov al,'.'
+stosb                     ; Print decimal point
+xchg rax,rdx              ; RAX = Previous quotient
+mov ebx,100000            ; Divisor for result unit = 0.1 MHz 
+xor edx,edx               ; RDX = 0, means dividend[127-64] = 0
+div rbx                   ; RAX = Clock freq. floating part in units = 0.1 MHz 
+mov bl,0                  ; BL = Template mode, 0 means no template
+call DecimalPrint32       ; Print floating part Y at X.Y MHz
+;--- Exit points ---
+jmp @f
+.Error:
+mov al,'?'
 stosb
-xchg rax,rdx
-cqo
-mov ebx,100               ; Quotient after /1000 make /100 = one digit.
-div rbx
-mov bl,0
-call DecimalPrint32       ; Float part
+@@:
 pop rdx rbx
 ret
 
@@ -200,9 +222,9 @@ ret
 ; Input:   None
 ; Output:  CF  = Flag: 0(NC)=Operation Passed, 1(C)=Operation Failed
 ;          Next parameters valid if CF=0 only
-;          R8  = TSC period, femtoseconds
-;          R9  = IA32_MPERF period, femtoseconds
-;          R10 = IA32_APERF period, femtoseconds
+;          R8  = TSC clock frequency, Hz 
+;          R9  = IA32_MPERF clock frequency, Hz 
+;          R10 = IA32_APERF clock frequency, Hz 
 ;---
 ClocksMeasure:
 push rbx rcx rdx rsi rdi 
@@ -215,61 +237,49 @@ cmp bl,al
 je @b
 mov bl,al
 ;--- Get and initializing counters start values ---
-mov ecx,000000E7h         ; Select IA32_MPERF MSR
-xor eax,eax               ; EAX = 0
-cdq                       ; EDX = 0
-wrmsr                     ; IA32_MPERF MSR = 0
-inc ecx                   ; Select IA32_APERF MSR , index ECX = 000000E8h
-wrmsr                     ; IA32_APERF MSR = 0
+mov ecx,000000E7h     ; Select IA32_MPERF MSR
+xor eax,eax           ; EAX = 0
+cdq                   ; EDX = 0
+wrmsr                 ; IA32_MPERF MSR = 0
+inc ecx               ; Select IA32_APERF MSR , index ECX = 000000E8h
+wrmsr                 ; IA32_APERF MSR = 0
 dec ecx
 rdtsc
-mov esi,eax               ; ESI = Current TSC , low 32
-mov edi,edx               ; EDI = Current TSC , high 32
+mov esi,eax           ; ESI = Current TSC , low 32
+mov edi,edx           ; EDI = Current TSC , high 32
 ;--- Measurement, wait 1 full second ---
 @@:
 call ReadRtcSeconds
-cmp bl,al                 ; BL = Previous seconds, AL = Old seconds 
+cmp bl,al             ; BL = Previous seconds, AL = Old seconds 
 je @b
 ;--- Get counters end values ---
-rdmsr                     ; Read IA32_MPERF MSR , index ECX = 000000E7h
+rdmsr                 ; Read IA32_MPERF MSR , index ECX = 000000E7h
 shl rdx,32
-lea r9,[rax+rdx]          ; R9 = Delta IA32_MPERF , 64-bit
-inc ecx                   ; Select IA32_APERF MSR , index ECX = 000000E8h
-rdmsr                     ; Read IA32_APERF MSR , index ECX = 000000E8h
+lea r9,[rax+rdx]      ; R9 = Delta IA32_MPERF , 64-bit
+inc ecx               ; Select IA32_APERF MSR , index ECX = 000000E8h
+rdmsr                 ; Read IA32_APERF MSR , index ECX = 000000E8h
 shl rdx,32
-lea r10,[rax+rdx]         ; R10 = Delta IA32_APERF , 64-bit
+lea r10,[rax+rdx]     ; R10 = Delta IA32_APERF , 64-bit
 rdtsc
 sub eax,esi
 sbb edx,edi
 shl rdx,32
-lea rsi,[rax+rdx]         ; RSI = Delta TSC, 64-bit , here RAX [127-64]=0
-;--- Calculation with measurement result for TSC ---		
-mov rbx,1000000000000000  ; Femtoseconds per Second
-mov rax,rbx
-cqo                       ; Dividend D[127-64] = 0
-test rsi,rsi
-stc                       ; CF=1(C) means error
-jz @f                     ; Go error if divisor = 0
-div rsi                   ; RAX = Femtoseconds per TSC
-xchg r8,rax               ; R8 = Femtoseconds per TSC , XCHG for compact code 
-;--- Calculation with measurement result for IA32_MPERF ---
-mov rax,rbx               ; Femtoseconds per Second
-cqo                       ; Dividend D[127-64] = 0
-test r9,r9
-stc                       ; CF=1(C) means error
-jz @f                     ; Go error if divisor = 0
-div r9                    ; RAX = Femtoseconds per TSC
-xchg r9,rax               ; R9 = Femtoseconds per IA32_MPERF 
-;--- Calculation with measurement result for IA32_APERF ---
-xchg rax,rbx              ; Femtoseconds per Second
-cqo                       ; Dividend D[127-64] = 0
-test r10,r10
-stc                       ; CF=1(C) means error
-jz @f                     ; Go error if divisor = 0
-div r10                   ; RAX = Femtoseconds per TSC
-xchg r10,rax              ; R10 = Femtoseconds per IA32_APERF 
+lea r8,[rax+rdx]      ; R8 = Delta TSC, 64-bit , here RAX [63-32]=0
+;--- Check results validity ---
+test r8,r8            ; Check TSC frequency
+jz .Error             ; Go error if result frequency = 0   
+js .Error             ; Go error if frequency value bit 63 set "1"
+test r9,r9            ; Check IA32_MPERF frequency
+jz .Error
+js .Error
+test r10,r10          ; Check IA32_APERF frequency
+jz .Error
+js .Error
 ;--- Exit points ---
-clc                       ; CF=0(NC) means no errors
+clc                   ; CF=0(NC) means no errors
+jmp @f
+.Error:
+stc                   ; CF=1(C) means error
 @@:
 pop rdi rsi rdx rcx rbx
 ret
@@ -283,7 +293,7 @@ ReadRtcSeconds:
 cli
 ;--- Wait for UIP=0 ---
 @@:
-mov	al,0Ah          ; Index=0Ah, control/status reg. 0Ah
+mov al,0Ah          ; Index=0Ah, control/status reg. 0Ah
 out 70h,al
 in al,71h           ; Read register 0Ah
 test al,80h         ; Index=0Ah, Bit=7, UIP bit
@@ -301,7 +311,7 @@ section '.data' data readable writeable
 
 NameMsg:
 DB  0Dh,0Ah
-DB  'Overclocking monitor. (C)IC Book Labs 07.03.2018.'
+DB  'Overclocking monitor v0.2. (C)2018 IC Book Labs.'
 DB  0Dh,0Ah,0 
 ErrorMsg1:
 DB  0Dh,0Ah
