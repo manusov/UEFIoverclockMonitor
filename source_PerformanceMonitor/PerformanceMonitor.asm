@@ -221,6 +221,9 @@ mov rsi,ErrorMsgCLK
 ErrorWrite:
 call StringWrite
 
+;--- Application exit point ---
+ApplicationExit:
+
 ;--- Restore system context ---
 test byte [r15+32],0010b   ; Test bit D1 = context restore request for XCR0
 jz @f                      ; Skip if XCR0 unchanged
@@ -236,7 +239,6 @@ mov cr4,rax
 @@:
 
 ;--- Exit to UEFI (Shell) with restore registers ---
-ApplicationExit:
 pop r15 r14 r13 r12 r11 r10 r9 r8
 pop rbp rdi rsi rdx rcx rbx
 xor rax,rax                       ; RAX = EFI_STATUS = 0
@@ -259,7 +261,7 @@ section '.data' data readable writeable
 ;--- Text messages, used at Overclocking Monitor ---
 NameMsg:
 DB  0Dh,0Ah,0Dh,0Ah
-DB  'Overclocking and performance monitor v0.3. (C)2018 IC Book Labs.'
+DB  'Overclocking and performance monitor v0.4. (C)2018 IC Book Labs.'
 DB  0Dh,0Ah,0 
 ErrorMsgCPUID:
 DB  0Dh,0Ah
