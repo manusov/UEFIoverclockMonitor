@@ -1,0 +1,17 @@
+; "FDBG style"
+
+mov eax,00040628h
+mov cr4,eax
+
+---
+
+; and al,00000110b           ; This mask for bits 1, 2
+; cmp al,00000110b
+; jne ApplicationErrorAVXCN  ; Go if AVX context not initialized by UEFI
+
+; YET RUN UNDER FDBG ONLY
+; BUG: RESTORE ALWAYS IF CHANGED, SEE ERROR BRANCHES
+
+; *** TODO: CR4/MXCSR/XCR0 CONTEXT MANAGEMENT BUG ***
+
+---
