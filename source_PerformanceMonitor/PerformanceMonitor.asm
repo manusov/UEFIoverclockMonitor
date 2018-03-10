@@ -23,6 +23,10 @@ mov [r15+00],rcx            ; Store UEFI application handle
 mov [r15+08],rdx            ; Store UEFI system table address
 mov byte [r15+32],0         ; Context restore requests = 0
 cld
+;--- Detect Current Privilege Level (CPL), can't run on ring3 emulators --- 
+mov ax,cs
+and al,0011b
+jnz ApplicationErrorCPL     ; Go if CPL > 0
 ;--- Detect CPUID support, this check can be actual at virtual machines ---
 mov ebx,21                  ; Bit number for toggleable check
 pushf                       ; In the 64-bit mode, push RFLAGS
@@ -52,22 +56,24 @@ jz ApplicationErrorHCFC    ; Go error if HCFC not detected
 ;--- Detect Advanced Vector Extension (AVX) feature and context management ---
 mov eax,1                  ; Select CPUID function 1
 cpuid
-and ecx,010000000h         ; This mask for bits 28
-jz  ApplicationErrorAVX    ; Go if AVX(ECX.28) not supported
+mov eax,014000000h         ; This mask for bits 28, 26
+and ecx,eax
+cmp ecx,eax
+jne ApplicationErrorAVX    ; Go if AVX(ECX.28) or XSAVE(ECX.26) not supported
 ;--- Support CR4 ---
 mov rax,cr4
 test ah,02h
 jz  ApplicationErrorSSECN  ; Go if OSFXSR(CR4.9) not set by UEFI
 mov [r15+16],rax
-or eax,00040400h           ; CR4.18 , CR4.10
+or eax,00040400h           ; CR4.18 = OSXSAVE, CR4.10 = OSXMMEXCEPT
 mov cr4,rax
 or byte [r15+32],0001b     ; Set bit D0 = context restore request for CR4
 ;--- Detect Advanced Vector Extension (AVX) feature and context management ---
 mov eax,1                  ; Select CPUID function 1
 cpuid
-mov eax,018000000h         ; This mask for bits 27, 28
+mov eax,018000000h         ; This mask for bits 28, 27
 and ecx,eax                ; ECX = Part of features bitmaps
-cmp ecx,eax
+cmp ecx,eax                ; Note CPUID OSXSAVE bit depend on CR4.OSXSAVE
 jne ApplicationErrorAVX    ; Go if OSXSAVE(ECX.27) or AVX(ECX.28) not supported
 ;--- Set AVX context management option in the XCR0 ---
 xor ecx,ecx                ; ECX = XCR register index
@@ -204,7 +210,10 @@ call StringWrite     ; Write copyright string
 jmp ApplicationExit
 
 ;--- Exit points if errors detected --- 
-ApplicationErrorCPUID:   ; Message if HCFC not available 
+ApplicationErrorCPL:     ; Message if CPL > 0, not a ring 0 
+mov rsi,ErrorMsgCPL
+jmp ErrorWrite
+ApplicationErrorCPUID:   ; Message if CPUID not available 
 mov rsi,ErrorMsgCPUID
 jmp ErrorWrite
 ApplicationErrorHCFC:    ; Message if HCFC not available 
@@ -261,8 +270,12 @@ section '.data' data readable writeable
 ;--- Text messages, used at Overclocking Monitor ---
 NameMsg:
 DB  0Dh,0Ah,0Dh,0Ah
-DB  'Overclocking and performance monitor v0.4. (C)2018 IC Book Labs.'
+DB  'Overclocking and performance monitor v0.5. (C)2018 IC Book Labs.'
 DB  0Dh,0Ah,0 
+ErrorMsgCPL:
+DB  0Dh,0Ah
+DB  'CPL>0 detected, cannot run under emulation.'
+DB  0Dh,0Ah,0
 ErrorMsgCPUID:
 DB  0Dh,0Ah
 DB  'CPUID not supported or locked.'
@@ -273,7 +286,7 @@ DB  'Hardware coordination feedback capability not detected.'
 DB  0Dh,0Ah,0
 ErrorMsgAVX:
 DB  0Dh,0Ah
-DB  'AVX not supported or locked.'
+DB  'AVX/XSAVE not supported or locked.'
 DB  0Dh,0Ah,0
 ErrorMsgSSECN:
 DB  0Dh,0Ah
