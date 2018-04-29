@@ -1,4 +1,4 @@
-;--- Performance pattern, AVX Write 128-bit ---
+;--- Performance pattern, x86-64 Write 64-bit ---
 ; INPUT:   None
 ; OUTPUT:  R8  = Delta TSC, clocks
 ;          R9  = Delta IA32_MPERF, clocks
@@ -6,9 +6,12 @@
 ;          R11 = Total target instructions (or r-w groups) executed
 ;---
 
-Performance_Write_128:
+Performance_Write_64:
 ;--- Clear write data ---
-vzeroall
+xor r8,r8
+xor r9,r9
+xor r10,r10
+xor r11,r11
 ;--- Get counters start values ---
 mov ecx,000000E7h     ; Select IA32_MPERF MSR
 xor eax,eax           ; EAX = 0
@@ -21,34 +24,34 @@ rdtsc
 mov esi,eax           ; ESI = Current TSC , low 32
 mov edi,edx           ; EDI = Current TSC , high 32
 ;--- Target performance pattern ---
-mov r11,50000000*16384/16
 mov eax,50000000
 .L1:
 mov rbx,DataBuffer
-mov rcx,16384/16/16
-mov edx,16*16 
+mov rcx,16384/16/8
+mov edx,16*8 
 .L0:
-vmovapd [rbx+16*00],xmm0
-vmovapd [rbx+16*01],xmm1
-vmovapd [rbx+16*02],xmm2
-vmovapd [rbx+16*03],xmm3
-vmovapd [rbx+16*04],xmm4
-vmovapd [rbx+16*05],xmm5
-vmovapd [rbx+16*06],xmm6
-vmovapd [rbx+16*07],xmm7
-vmovapd [rbx+16*08],xmm8
-vmovapd [rbx+16*09],xmm9
-vmovapd [rbx+16*10],xmm10
-vmovapd [rbx+16*11],xmm11
-vmovapd [rbx+16*12],xmm12
-vmovapd [rbx+16*13],xmm13
-vmovapd [rbx+16*14],xmm14
-vmovapd [rbx+16*15],xmm15
+mov [rbx+8*00],r8
+mov [rbx+8*01],r9
+mov [rbx+8*02],r10
+mov [rbx+8*03],r11
+mov [rbx+8*04],r8
+mov [rbx+8*05],r9
+mov [rbx+8*06],r10
+mov [rbx+8*07],r11
+mov [rbx+8*08],r8
+mov [rbx+8*09],r9
+mov [rbx+8*10],r10
+mov [rbx+8*11],r11
+mov [rbx+8*12],r8
+mov [rbx+8*13],r9
+mov [rbx+8*14],r10
+mov [rbx+8*15],r11
 add rbx,rdx
 dec ecx
 jnz .L0
 dec eax
 jnz .L1
+mov r11,50000000*16384/8
 ;--- Get counters end values ---
 mov ecx,000000E7h     ; Select IA32_MPERF MSR
 rdmsr                 ; Read IA32_MPERF MSR , index ECX = 000000E7h

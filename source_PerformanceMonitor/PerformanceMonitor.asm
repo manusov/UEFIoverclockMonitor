@@ -257,7 +257,10 @@ ret                               ; Simple form of termination
 include 'StringWrite.inc'       ; Console output
 include 'StringBuild.inc'       ; Build strings in the text buffer
 include 'MeasureClocks.inc'     ; Measure CPU counters clocks
-include 'PatternRead128.inc'    ; Performance patterns
+include 'PatternRead64.inc'     ; Performance patterns
+include 'PatternWrite64.inc'
+include 'PatternCopy64.inc'
+include 'PatternRead128.inc'
 include 'PatternWrite128.inc'
 include 'PatternCopy128.inc'
 include 'PatternRead256.inc'
@@ -270,7 +273,7 @@ section '.data' data readable writeable
 ;--- Text messages, used at Overclocking Monitor ---
 NameMsg:
 DB  0Dh,0Ah,0Dh,0Ah
-DB  'Overclocking and performance monitor v0.5. (C)2018 IC Book Labs.'
+DB  'Overclocking and performance monitor v0.6. (C)2018 IC Book Labs.'
 DB  0Dh,0Ah,0 
 ErrorMsgCPL:
 DB  0Dh,0Ah
@@ -315,30 +318,28 @@ DB  0Dh,0Ah,0
 
 ;--- Control sequence for run performance patterns ---
 ControlSequence:
-DB  0Dh,0Ah 
-DB  'Read-128,  VMOVAPD'
-DB  0
+; x86 MOV instructions
+DB  0Dh,0Ah, 'Read-64,   MOV     ', 0
+DQ  Performance_Read_64
+DB  0Dh,0Ah, 'Write-64,  MOV     ', 0
+DQ  Performance_Write_64
+DB  0Dh,0Ah, 'Copy-64,   MOV     ', 0
+DQ  Performance_Copy_64
+; AVX 128-bit instructions
+DB  0Dh,0Ah, 'Read-128,  VMOVAPD', 0
 DQ  Performance_Read_128
-DB  0Dh,0Ah
-DB  'Write-128, VMOVAPD'
-DB  0
+DB  0Dh,0Ah, 'Write-128, VMOVAPD', 0
 DQ  Performance_Write_128
-DB  0Dh,0Ah
-DB  'Copy-128,  VMOVAPD'
-DB  0
+DB  0Dh,0Ah, 'Copy-128,  VMOVAPD', 0
 DQ  Performance_Copy_128
-DB  0Dh,0Ah 
-DB  'Read-256,  VMOVAPD'
-DB  0
+; AVX 256-bit instructions
+DB  0Dh,0Ah, 'Read-256,  VMOVAPD', 0
 DQ  Performance_Read_256
-DB  0Dh,0Ah
-DB  'Write-256, VMOVAPD'
-DB  0
+DB  0Dh,0Ah, 'Write-256, VMOVAPD', 0
 DQ  Performance_Write_256
-DB  0Dh,0Ah
-DB  'Copy-256,  VMOVAPD'
-DB  0
+DB  0Dh,0Ah, 'Copy-256,  VMOVAPD', 0
 DQ  Performance_Copy_256
+; End of scenario list
 DB  0
 
 ;--- This structures don't reserve space in the file, because "?" ---

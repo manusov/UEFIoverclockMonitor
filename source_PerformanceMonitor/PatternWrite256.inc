@@ -7,6 +7,8 @@
 ;---
 
 Performance_Write_256:
+;--- Clear write data ---
+vzeroall
 ;--- Get counters start values ---
 mov ecx,000000E7h     ; Select IA32_MPERF MSR
 xor eax,eax           ; EAX = 0
